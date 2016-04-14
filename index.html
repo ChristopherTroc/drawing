@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+   <title>Drawing live Node JS</title>
+   <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body{
+        font-size: 14px;
+        margin:0;
+        padding:0;
+       }
+   #cursors{
+           position:relative;
+           }
+   .cursor{
+           position:absolute;
+           width:20px;
+           height:30px;
+           background: url("./pointer_small.png") no-repeat;
+           }
+   canvas{
+          background:#DDD;
+         }
+
+   </style>
+  </head>
+  <body>
+    <div id="cursors"></div>
+    <canvas id="paper" width="1980" height="800"></canvas>
+    <hgroup id="instructions">
+      <h1>Dibujamos!</h1>
+      <h2>Dibuja en cualquier lugar con tu cursor</h2>
+      <h3>Canvas nuevo refresca la pagina </h3>
+    </hgroup>
+
+    <!-- js script -->
+    <script src="https://cdn.socket.io/socket.io-1.2.0.js"></script>
+    <script src="https://code.jquery.com/jquery-git.min.js"></script>
+    <script>
+      var doc = $(document);
+      var win = $(window);
+      var canvas = $('#paper');
+      var instructions = $('#instructions');
+      var ctx = canvas[0].getContext('2d');
+      
+      //id unico para la sesion
+      var id = Math.round($.now()*Math.random());
+
+      //Inicialisamos estados
+      var drawing = false;
+      var clients = {};
+      var cursors = {};
+      var prev = {};
+      var lastEmit = $.now();
+
+      //Abricmos conexion
+      var socket = io();
+
+
+       
+      //Eventos Locales
+      function mouseMoveHandler(e){
+        
+        if($.now() - lastEmit > 30){
+          var movement = {
+                          'x':e.pageX,
+                          'y':e.pageY,
+                          'drawing':drawing,
+                          'id':id 
+                         };
+          socket.emit('mousemove',movement);
+          lastEmit = $.now();
+        }
+
+        
+        if(drawing){
+          drawLine(prev.x, prev.y, e.pageX, e.pageY);
+          prev.x = e.pageX;
+          prev.y = e.pageY;
+        }
+     
+      }
+
+      function mouseDownHandler(e){
+        e.preventDefault();
+        drawing = true;
+        prev.x = e.pageX;
+        prev.y = e.pageY;
+
+        //Escondemos las instrucciones
+        instructions.fadeOut();
+       }
+
+       //Eventos remotos
+       function moveHandler(data){
+         if(!(data.id in clients)){
+           //Le damos un cursor a cada usuario de la app
+           cursors[data.id] = $('<div class="cursor">').appendTo('#cursors');
+         }
+         //Movemos el cursor a su posicion
+         cursors[data.id].css({
+          'left':data.x,
+          'top' :data.y 
+         });
+
+         if(data.drawing && clients[data.id]){
+           drawLine(clients[data.id].x, clients[data.id].y, data.x, data.y);
+         }
+
+         //Actualizamos el estado
+         clients[data.id] = data;
+         clients[data.id].updated = $.now();
+       }
+
+       //funcion global para dibujar
+       function drawLine(fromx, fromy, tox, toy){
+      
+         ctx.beginPath();
+         ctx.moveTo(fromx,fromy);
+         ctx.lineTo(tox,toy);
+         ctx.stroke();
+       }
+
+       //function para eliminar seciones
+       setInterval(function(){
+         for(var ident in clients){
+           if($.now() - clients[ident].updated > 10000){
+             cursors[ident].remove();
+             delete clients[ident];
+             delete cursors[ident];
+           }
+         }
+       },10000);
+
+       socket.on('move', moveHandler);
+       canvas.on('mousedown', mouseDownHandler);
+       doc.on('mousemove', mouseMoveHandler);
+       
+       doc.bind('mouseup mouseleave',function(){
+         drawing = false;
+       });
+
+    </script>
+
+  </body>
+</html>
